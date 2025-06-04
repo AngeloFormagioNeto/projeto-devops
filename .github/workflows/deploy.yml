@@ -34,8 +34,3 @@ jobs:
     - name: Run build
       run: npm run build
 
-    - name: Upload production build (opcional)
-      uses: actions/upload-artifact@v3
-      with:
-        name: production-build
-        path: build/
