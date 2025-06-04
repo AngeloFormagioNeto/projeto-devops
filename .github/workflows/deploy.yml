@@ -1,33 +1,35 @@
-name: Deploy to Vercel
+name: Deploy React App
 
 on:
   push:
-    branches: [main, master]
+    branches: [ main ]  # Ou a branch que você usa para produção
+  pull_request:
+    branches: [ main ]
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: 18
-          cache: 'npm'
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'  # Use a versão do Node.js que sua aplicação requer
 
-      - name: Install dependencies
-        run: npm ci
+    - name: Install dependencies
+      run: npm install
 
-      - name: Build project
-        run: npm run build
+    - name: Run tests (opcional)
+      run: npm test
 
-      - name: Deploy to Vercel
-        run: |
-          npm install -g vercel@latest
-          vercel --prod --token ${{ secrets.VERCEL_TOKEN }} \
-                 --scope ${{ secrets.VERCEL_ORG_ID }} \
-                 --confirm
-        env:
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    - name: Build application
+      run: npm run build
+
+    - name: Deploy to GitHub Pages (exemplo)
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./build
