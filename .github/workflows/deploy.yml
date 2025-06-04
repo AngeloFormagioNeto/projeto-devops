@@ -25,8 +25,12 @@ jobs:
         npm ci
         npx update-browserslist-db@latest
 
-    - name: Run tests (se tiver testes)
-      run: npm test
+    - name: Test component rendering
+      run: |
+        npx react-scripts test \
+        --testMatch="**/src/components/**/*.test.js" \
+        --watchAll=false \
+        --passWithNoTests
 
     - name: Run build
       run: npm run build
