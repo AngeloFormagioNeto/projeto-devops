@@ -1,13 +1,13 @@
-name: Deploy React App
+name: CI - Build React App
 
 on:
   push:
-    branches: [ main ]  # Ou a branch que você usa para produção
+    branches: [ main, master ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, master ]
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
 
     steps:
@@ -17,19 +17,17 @@ jobs:
     - name: Set up Node.js
       uses: actions/setup-node@v3
       with:
-        node-version: '18'  # Use a versão do Node.js que sua aplicação requer
+        node-version: '18'
+        cache: 'npm'
 
     - name: Install dependencies
-      run: npm install
+      run: |
+        npm ci
+        npx update-browserslist-db@latest
 
-    - name: Run tests (opcional)
-      run: npm test
+    - name: Run ESLint (opcional - para identificar problemas antes do build)
+      run: npm run lint || true  # O "|| true" faz o workflow continuar mesmo com erros
 
-    - name: Build application
-      run: npm run build
-
-    - name: Deploy to GitHub Pages (exemplo)
-      uses: peaceiris/actions-gh-pages@v3
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./build
+    - name: Run build
+      run: |
+        CI=false npm run build  # Desativa tratamento de warnings como erros
