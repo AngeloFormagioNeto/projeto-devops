@@ -1,51 +1,30 @@
-name: CI-React
+name: Deploy to Vercel
 
 on:
   push:
     branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Detect Node.js version
-      id: node-version
-      run: |
-        # Tenta ler do .nvmrc ou package.json
-        if [ -f .nvmrc ]; then
-          echo "Using Node version from .nvmrc"
-          NODE_VERSION=$(cat .nvmrc)
-        elif [ -f package.json ]; then
-          echo "Checking package.json for Node version"
-          NODE_VERSION=$(node -pe "require('./package.json').engines?.node || '18'")
-        else
-          NODE_VERSION="18"
-        fi
-        
-        # Remove caracteres não numéricos (^, ~, etc.)
-        CLEAN_VERSION=$(echo "$NODE_VERSION" | sed 's/[^0-9.]//g')
-        echo "Using Node.js version: $CLEAN_VERSION"
-        echo "node_version=$CLEAN_VERSION" >> $GITHUB_OUTPUT
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
 
-    - name: Set up Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '${{ steps.node-version.outputs.node_version }}'
-        cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
 
-    - name: Install dependencies
-      run: npm ci
+      - name: Build project
+        run: npm run build
 
-    - name: Run build
-      run: npm run build
-
-    - name: Verify Node.js version (opcional)
-      run: |
-        echo "Node.js version: $(node --version)"
-        echo "npm version: $(npm --version)"
+      - name: Deploy to Vercel
+        uses: amondnet/vercel-action@v30
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod'  # Força deploy em produção
