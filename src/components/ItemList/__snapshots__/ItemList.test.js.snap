@@ -1,0 +1,20 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`ItemList snapshot matches 1`] = `
+<div
+  className="item-list"
+>
+  <strong>
+    <a
+      href="https://github.com/AngeloFormagio/Test Repo"
+      target="blank"
+    >
+      Test Repo
+    </a>
+  </strong>
+  <p>
+    Test description
+  </p>
+  <hr />
+</div>
+`;
