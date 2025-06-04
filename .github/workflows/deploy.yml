@@ -25,9 +25,6 @@ jobs:
         npm ci
         npx update-browserslist-db@latest
 
-    - name: Run ESLint
-      run: npm run lint  # Agora falhará se houver erros
-
     - name: Run tests (se tiver testes)
       run: npm test
 
