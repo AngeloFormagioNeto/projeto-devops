@@ -1,4 +1,4 @@
-name: CI - Build React App
+name: projeto-ci-cd-fase-1
 
 on:
   push:
