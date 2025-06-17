@@ -92,7 +92,7 @@ jobs:
         echo "${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest"
         echo "${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA"
 
-  deploy-to-vercel:
+    deploy-to-vercel:
     needs: push-to-registry
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
@@ -123,4 +123,5 @@ jobs:
         echo "url=$(terraform -chdir=terraform output -raw vercel_url)" >> $GITHUB_OUTPUT
 
     - name: Show Vercel URL
-      run: echo "Deployed to: ${{ steps.vercel-url.outputs.url }}"
+      run: |
+        echo "Deployed to: ${{ steps.vercel-url.outputs.url }}"
