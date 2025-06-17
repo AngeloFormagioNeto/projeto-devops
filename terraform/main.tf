@@ -34,26 +34,23 @@ provider "vercel" {
 }
 
 resource "vercel_project" "app" {
-  name      = var.project_name
-  framework = "docker"
-
-  git_repository = {
-    type = "github"
-    repo = var.github_repo
-  }
+  name = var.project_name
+  # Não usamos framework para implantações Docker
 }
 
-resource "vercel_deployment" "app" {
+resource "vercel_deployment" "docker_app" {
   project_id = vercel_project.app.id
   files = {
     "vercel.json" = jsonencode({
-      builds = [{
-        src     = "Dockerfile"
-        use     = "@vercel/docker"
-        config = {
-          dockerfile = "Dockerfile"
+      builds = [
+        {
+          src    = "Dockerfile"
+          use    = "@vercel/docker"
+          config = {
+            dockerfile = "Dockerfile"
+          }
         }
-      }]
+      ]
       routes = [
         {
           src       = "/(.*)"
@@ -66,10 +63,11 @@ resource "vercel_deployment" "app" {
   }
 
   environment = {
+    # Forneça a imagem Docker como variável de ambiente
     DOCKER_IMAGE = var.docker_image
   }
 }
 
 output "vercel_url" {
-  value = "https://${vercel_deployment.app.url}"
+  value = "https://${vercel_deployment.docker_app.url}"
 }
