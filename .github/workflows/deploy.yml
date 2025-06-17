@@ -106,11 +106,9 @@ jobs:
     - name: Link Vercel project
       run: |
         vercel link --yes --token=${{ secrets.VERCEL_API_TOKEN }} \
-          --project=${{ env.VERCEL_PROJECT_NAME }} \
-          --scope=${{ secrets.VERCEL_SCOPE }}
-      env:
-        VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-        VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          --project=${{ secrets.VERCEL_PROJECT_ID }} \
+          --scope=${{ secrets.VERCEL_SCOPE }} \
+          --org-id=${{ secrets.VERCEL_ORG_ID }}
 
     - name: Set Docker image environment variable
       run: |
