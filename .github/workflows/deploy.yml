@@ -2,15 +2,14 @@ name: projeto-ci-cd-fase-1
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
 
 env:
   IMAGE_NAME: meu-app-react
   DOCKER_REGISTRY: docker.io
   VERCEL_PROJECT_NAME: meu-app-react
-  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
 
 jobs:
   build-and-test:
@@ -50,7 +49,6 @@ jobs:
           -t ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest \
           .
         
-        # Salvar ambas as tags no arquivo TAR
         docker save -o image.tar \
           ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA \
           ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
@@ -113,8 +111,7 @@ jobs:
 
     - name: Terraform Apply
       run: |
-        terraform -chdir=terraform apply \
-          -auto-approve \
+        terraform -chdir=terraform apply -auto-approve \
           -var="vercel_api_token=${{ secrets.VERCEL_API_TOKEN }}" \
           -var="docker_image=${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA" \
           -var="project_name=${{ env.VERCEL_PROJECT_NAME }}" \
