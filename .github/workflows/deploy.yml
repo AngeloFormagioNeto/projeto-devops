@@ -6,12 +6,8 @@ on:
   pull_request:
     branches: [ main, master ]
 
-env:
-  IMAGE_NAME: meu-app-react
-  DOCKER_REGISTRY: docker.io
-
 jobs:
-  build-and-test:
+  build:
     runs-on: ubuntu-latest
 
     steps:
@@ -41,51 +37,3 @@ jobs:
     - name: Run build
       run: npm run build
 
-    - name: Build Docker image
-      run: |
-        docker build \
-          -t ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA \
-          -t ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest \
-          .
-        
-        # Salvar a imagem em formato tar
-        docker save -o image.tar ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA
-
-    - name: Upload Docker image
-      uses: actions/upload-artifact@v4
-      with:
-        name: docker-image
-        path: image.tar
-        retention-days: 1
-
-  push-to-registry:
-    needs: build-and-test
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
-    
-    steps:
-    - name: Download Docker image
-      uses: actions/download-artifact@v4
-      with:
-        name: docker-image
-        path: downloaded_image
-
-    - name: Load Docker image
-      run: docker load -i downloaded_image/image.tar
-
-    - name: Log in to Docker Hub
-      uses: docker/login-action@v3
-      with:
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-    - name: Push Docker images
-      run: |
-        docker push ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA
-        docker push ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
-
-    - name: Print image info
-      run: |
-        echo "Image pushed to:"
-        echo "${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest"
-        echo "${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA"
