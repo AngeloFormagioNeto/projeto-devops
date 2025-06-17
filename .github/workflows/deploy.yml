@@ -48,8 +48,10 @@ jobs:
           -t ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest \
           .
         
-        # Salvar a imagem em formato tar
-        docker save -o image.tar ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA
+        # Salvar ambas as tags no arquivo TAR
+        docker save -o image.tar \
+          ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA \
+          ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
 
     - name: Upload Docker image
       uses: actions/upload-artifact@v4
