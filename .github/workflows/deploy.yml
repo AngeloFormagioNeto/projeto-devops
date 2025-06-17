@@ -103,10 +103,19 @@ jobs:
     - name: Setup Vercel CLI
       run: npm install -g vercel@32.2.0
 
+    - name: Link Vercel project
+      run: |
+        vercel link --yes --token=${{ secrets.VERCEL_API_TOKEN }} \
+          --project=${{ env.VERCEL_PROJECT_NAME }} \
+          --scope=${{ secrets.VERCEL_SCOPE }}
+      env:
+        VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+    - name: Set Docker image environment variable
+      run: |
+        vercel env add DOCKER_IMAGE production --token=${{ secrets.VERCEL_API_TOKEN }} <<< "${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA"
+
     - name: Deploy to Vercel
       run: |
-        # Configurar variáveis de ambiente para o build
-        vercel env add DOCKER_IMAGE production --token=${{ secrets.VERCEL_API_TOKEN }} <<< "${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA"
-        
-        # Fazer o deploy
         vercel deploy --prod --token=${{ secrets.VERCEL_API_TOKEN }}
