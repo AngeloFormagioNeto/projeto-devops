@@ -9,6 +9,8 @@ on:
 env:
   IMAGE_NAME: meu-app-react
   DOCKER_REGISTRY: docker.io
+  VERCEL_PROJECT_NAME: meu-app-react
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
 
 jobs:
   build-and-test:
@@ -91,3 +93,37 @@ jobs:
         echo "Image pushed to:"
         echo "${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest"
         echo "${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA"
+
+  deploy-to-vercel:
+    needs: push-to-registry
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: 1.7.5
+
+    - name: Terraform Init
+      run: terraform -chdir=terraform init
+
+    - name: Terraform Apply
+      run: |
+        terraform -chdir=terraform apply \
+          -auto-approve \
+          -var="vercel_api_token=${{ secrets.VERCEL_API_TOKEN }}" \
+          -var="docker_image=${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA" \
+          -var="project_name=${{ env.VERCEL_PROJECT_NAME }}" \
+          -var="github_repo=${{ github.repository }}"
+
+    - name: Get Vercel URL
+      id: vercel-url
+      run: |
+        echo "url=$(terraform -chdir=terraform output -raw vercel_url)" >> $GITHUB_OUTPUT
+
+    - name: Show Vercel URL
+      run: echo "Deployed to: ${{ steps.vercel-url.outputs.url }}"
