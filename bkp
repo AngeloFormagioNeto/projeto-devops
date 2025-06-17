@@ -1,0 +1,39 @@
+name: projeto-ci-cd-fase-1
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: |
+        npm ci
+        npm install --save-dev @babel/plugin-proposal-private-property-in-object
+        npx update-browserslist-db@latest
+
+    - name: Test component rendering
+      run: |
+        npx react-scripts test \
+        --testMatch="**/src/components/**/*.test.js" \
+        --watchAll=false \
+        --detectOpenHandles \
+        --passWithNoTests
+
+    - name: Run build
+      run: npm run build
+
