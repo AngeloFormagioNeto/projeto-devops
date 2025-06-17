@@ -1,4 +1,4 @@
-name: projeto-ci-cd-fase-1
+name: CI/CD Pipeline
 
 on:
   push:
@@ -14,7 +14,6 @@ env:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -63,7 +62,6 @@ jobs:
   push-to-registry:
     needs: build-and-test
     runs-on: ubuntu-latest
-    # Correção na condição if
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     
     steps:
@@ -93,7 +91,7 @@ jobs:
         echo "${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest"
         echo "${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA"
 
-   deploy-to-vercel:
+  deploy-to-vercel:
     needs: push-to-registry
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
@@ -102,35 +100,15 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    # Copiar arquivos necessários para o diretório Terraform
-    - name: Prepare Terraform files
+    - name: Setup Vercel CLI
+      run: npm install -g vercel@32.2.0
+
+    - name: Deploy to Vercel
       run: |
-        mkdir -p terraform
-        cp vercel.json terraform/
-        cp Dockerfile terraform/
-
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v2
-      with:
-        terraform_version: 1.7.5
-
-    - name: Terraform Init
-      run: terraform -chdir=terraform init
-
-    - name: Terraform Apply
-      run: |
-        terraform -chdir=terraform apply -auto-approve \
-          -var="vercel_api_token=${{ secrets.VERCEL_API_TOKEN }}" \
-          -var="docker_image=${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA" \
-          -var="project_name=${{ env.VERCEL_PROJECT_NAME }}" \
-          -var="github_repo=${{ github.repository }}"
-
-    - name: Get Vercel URL
-      id: vercel-url
-      run: |
-        URL=$(terraform -chdir=terraform output -raw vercel_url)
-        echo "url=$URL" >> $GITHUB_OUTPUT
-
-    - name: Show Vercel URL
-      run: |
-        echo "Deployed to: ${{ steps.vercel-url.outputs.url }}"
+        vercel deploy --prod --token=${{ secrets.VERCEL_API_TOKEN }} \
+          --docker \
+          --build-env DOCKER_IMAGE=${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA \
+          --scope ${{ secrets.VERCEL_SCOPE }}
+      env:
+        VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
