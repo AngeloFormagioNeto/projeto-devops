@@ -1,19 +1,19 @@
 {
+  "version": 2,
+  "public": false,
   "builds": [
     {
-      "src": "Dockerfile",
-      "use": "@vercel/docker",
+      "src": "package.json",
+      "use": "@vercel/static-build",
       "config": {
-        "dockerfile": "Dockerfile"
+        "distDir": "build"
       }
     }
   ],
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "/$1",
-      "methods": ["GET"],
-      "continue": true
+      "dest": "/$1"
     }
   ]
 }

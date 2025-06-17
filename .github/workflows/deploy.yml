@@ -103,9 +103,32 @@ jobs:
     - name: Setup Vercel CLI
       run: npm install -g vercel@32.2.0
 
+    - name: Create vercel.json configuration
+      run: |
+        cat > vercel.json <<EOF
+        {
+          "version": 2,
+          "public": false,
+          "builds": [
+            {
+              "src": "package.json",
+              "use": "@vercel/static-build",
+              "config": {
+                "distDir": "build"
+              }
+            }
+          ],
+          "routes": [
+            {
+              "src": "/(.*)",
+              "dest": "/$1"
+            }
+          ]
+        }
+        EOF
+
     - name: Deploy to Vercel
       run: |
         vercel deploy --prod --token=${{ secrets.VERCEL_API_TOKEN }} \
           --scope=${{ secrets.VERCEL_SCOPE }} \
-          --confirm \
-          -b DOCKER_IMAGE=${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA
+          --yes
