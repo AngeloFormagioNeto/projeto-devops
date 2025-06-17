@@ -35,35 +35,24 @@ provider "vercel" {
 
 resource "vercel_project" "app" {
   name = var.project_name
-  # Não usamos framework para implantações Docker
+}
+
+# Armazenar os arquivos necessários para o deployment
+data "local_file" "vercel_config" {
+  filename = "${path.module}/../vercel.json"
+}
+
+data "local_file" "dockerfile" {
+  filename = "${path.module}/../Dockerfile"
 }
 
 resource "vercel_deployment" "docker_app" {
   project_id = vercel_project.app.id
   files = {
-    "vercel.json" = jsonencode({
-      builds = [
-        {
-          src    = "Dockerfile"
-          use    = "@vercel/docker"
-          config = {
-            dockerfile = "Dockerfile"
-          }
-        }
-      ]
-      routes = [
-        {
-          src       = "/(.*)"
-          dest      = "/$1"
-          methods   = ["GET"]
-          continue  = true
-        }
-      ]
-    })
+    "vercel.json" = data.local_file.vercel_config.content
+    "Dockerfile"  = data.local_file.dockerfile.content
   }
-
   environment = {
-    # Forneça a imagem Docker como variável de ambiente
     DOCKER_IMAGE = var.docker_image
   }
 }
