@@ -124,6 +124,8 @@ jobs:
       uses: hashicorp/setup-terraform@v3
       with:
         terraform_version: ${{ env.TF_VERSION }}
+        # Adicionado para limpar cache de providers
+        terraform_wrapper: false
 
     - name: Terraform Init
       run: terraform init
@@ -132,7 +134,9 @@ jobs:
     - name: Terraform Apply
       env:
         NETLIFY_TOKEN: ${{ secrets.NETLIFY_TOKEN }}
-      run: terraform apply -auto-approve -var="netlify_token=$NETLIFY_TOKEN"
+      run: |
+        terraform init -upgrade
+        terraform apply -auto-approve -var="netlify_token=$NETLIFY_TOKEN"
       working-directory: terraform
 
     - name: Get site URL
