@@ -112,7 +112,7 @@ resource "aws_security_group" "ecs" {
 
 # Application Load Balancer
 resource "aws_lb" "app" {
-  name               = "${var.app_name}-lb-${random_id.suffix.hex}"
+  name               = "${replace(var.app_name, "/[^a-zA-Z0-9-]/", "")}-lb-${random_id.suffix.dec}"  # Usar dec em vez de hex
   internal           = false
   load_balancer_type = "application"
   subnets            = aws_subnet.public[*].id
@@ -131,7 +131,7 @@ resource "aws_lb" "app" {
 
 # Target Group
 resource "aws_lb_target_group" "app" {
-  name        = "${var.app_name}-tg-${random_id.suffix.hex}"
+  name        = "${replace(var.app_name, "/[^a-zA-Z0-9-]/", "")}-tg-${random_id.suffix.dec}"  # Usar dec em vez de hex
   port        = var.app_port
   protocol    = "HTTP"
   target_type = "ip"
@@ -199,6 +199,21 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution_policy" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+# Política adicional para permissão de tags
+resource "aws_iam_role_policy" "ecs_logs_tagging" {
+  name = "${var.app_name}-ecs-logs-tagging"
+  role = aws_iam_role.ecs_task_execution_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = "logs:TagResource"
+      Resource = "*"
+    }]
+  })
+}
+
 # Task Definition
 resource "aws_ecs_task_definition" "app" {
   family                   = "${var.app_name}-task"
@@ -209,7 +224,7 @@ resource "aws_ecs_task_definition" "app" {
   execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
 
   container_definitions = jsonencode([{
-    name      = var.app_name
+    name      = "react-app-container"  # Nome fixo para o container
     image     = var.app_image
     cpu       = 256
     memory    = 512
@@ -253,7 +268,7 @@ resource "aws_ecs_service" "app" {
 
   load_balancer {
     target_group_arn = aws_lb_target_group.app.arn
-    container_name   = var.app_name
+    container_name   = "react-app-container"  # Deve corresponder ao nome na task definition
     container_port   = var.app_port
   }
 

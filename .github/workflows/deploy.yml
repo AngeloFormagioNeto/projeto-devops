@@ -22,7 +22,7 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0  # Necessário para o Terraform
+        fetch-depth: 0
 
     - name: Set up Node.js
       uses: actions/setup-node@v3
@@ -54,7 +54,6 @@ jobs:
           -t ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest \
           .
         
-        # Salvar ambas as tags no arquivo TAR
         docker save -o image.tar \
           ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA \
           ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
@@ -103,7 +102,7 @@ jobs:
     needs: [build-and-test, push-to-registry]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
-    timeout-minutes: 30
+    timeout-minutes: 40
     
     steps:
     - name: Checkout repository
@@ -121,6 +120,13 @@ jobs:
       with:
         terraform_version: 1.8.0
         terraform_wrapper: false
+
+    - name: Prepare Terraform Variables
+      run: |
+        # Usar SHA do commit para evitar conflitos
+        echo "app_image=${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA" >> $GITHUB_ENV
+        # Gerar nome único para evitar conflitos de recursos
+        echo "app_name=react-app-$(date +%s)" >> $GITHUB_ENV
 
     - name: Terraform Init
       run: terraform init -input=false
@@ -145,21 +151,18 @@ jobs:
           -var="app_image=${{ env.app_image }}" \
           -out=tfplan
       working-directory: ${{ env.TERRAFORM_DIR }}
-    
-    - name: Prepare Terraform Variables
-      run: |
-        # Usar imagem mais recente para evitar conflito de tags
-        echo "app_image=${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA" >> $GITHUB_ENV
-        # Nome único para evitar conflitos
-        echo "app_name=react-app-$(date +%s)" >> $GITHUB_ENV
 
     - name: Terraform Apply
       run: |
         terraform apply -auto-approve tfplan || \
-        (echo "Primeira tentativa falhou. Tentando novamente..." && \
-        terraform apply -auto-approve tfplan)
+        (echo "Primeira tentativa falhou. Recriando o plano..." && \
+         terraform refresh -auto-approve && \
+         terraform plan \
+           -var="app_name=${{ env.app_name }}" \
+           -var="app_image=${{ env.app_image }}" \
+           -out=tfplan-new && \
+         terraform apply -auto-approve tfplan-new)
       working-directory: ${{ env.TERRAFORM_DIR }}
-      timeout-minutes: 30
 
     - name: Get ALB DNS
       id: alb-dns
@@ -175,9 +178,9 @@ jobs:
         
     - name: Post Deployment Health Check
       run: |
-        # Aguarda 30 segundos para o deploy completar
-        sleep 30
-        curl --retry 5 --retry-delay 10 --max-time 5 -sSf ${{ steps.alb-dns.outputs.url }}
+        # Aguarda 60 segundos para o deploy completar
+        sleep 60
+        curl --retry 5 --retry-delay 15 --max-time 10 -sSf ${{ steps.alb-dns.outputs.url }}
 
     - name: Save Application URL
       uses: actions/github-script@v7
@@ -187,6 +190,15 @@ jobs:
             issue_number: context.issue.number,
             owner: context.repo.owner,
             repo: context.repo.repo,
-            body: "✅ Aplicação implantada com sucesso!\n\nURL: ${{ steps.alb-dns.outputs.url }}"
+            body: "✅ Aplicação implantada com sucesso!\n\nURL: ${{ steps.alb-dns.outputs.url }}\n\nEsta URL será válida por aproximadamente 1 hora."
           })
       if: always() && github.event_name == 'pull_request'
+
+    - name: Cleanup on Failure
+      if: failure()
+      run: |
+        echo "##[error]Deploy falhou. Iniciando limpeza..."
+        terraform destroy -auto-approve \
+          -var="app_name=${{ env.app_name }}" \
+          -var="app_image=${{ env.app_image }}"
+      working-directory: ${{ env.TERRAFORM_DIR }}
