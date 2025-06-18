@@ -157,20 +157,36 @@ jobs:
     - name: Terraform Apply
       run: |
         # Primeira tentativa
-        terraform apply -auto-approve -input=false tfplan || \
+        terraform apply -auto-approve -input=false \
+          -var="app_name=${{ env.app_name }}" \
+          -var="app_image=${{ env.app_image }}" \
+          -var="app_port=80" \
+          -var="app_count=1" \
+          tfplan || \
         (echo "Primeira tentativa falhou. Recriando o plano..." && \
-         # Recarrega o estado
-         terraform refresh -input=false && \
-         # Recria o plano com as mesmas variáveis
-         terraform plan -input=false \
-           -var="app_name=${{ env.app_name }}" \
-           -var="app_image=${{ env.app_image }}" \
-           -out=tfplan-new && \
-         # Segunda tentativa
-         terraform apply -auto-approve -input=false tfplan-new)
+        # Recarrega o estado
+        terraform refresh -input=false \
+          -var="app_name=${{ env.app_name }}" \
+          -var="app_image=${{ env.app_image }}" \
+          -var="app_port=80" \
+          -var="app_count=1" && \
+        # Recria o plano com as mesmas variáveis
+        terraform plan -input=false \
+          -var="app_name=${{ env.app_name }}" \
+          -var="app_image=${{ env.app_image }}" \
+          -var="app_port=80" \
+          -var="app_count=1" \
+          -out=tfplan-new && \
+        # Segunda tentativa
+        terraform apply -auto-approve -input=false \
+          -var="app_name=${{ env.app_name }}" \
+          -var="app_image=${{ env.app_image }}" \
+          -var="app_port=80" \
+          -var="app_count=1" \
+          tfplan-new)
       working-directory: ${{ env.TERRAFORM_DIR }}
       env:
-        TF_INPUT: 0 # Desabilita prompts interativos
+        TF_INPUT: 0
 
     - name: Get ALB DNS
       id: alb-dns

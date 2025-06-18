@@ -177,9 +177,9 @@ resource "aws_iam_role" "ecs_task_execution_role" {
   }
 }
 
-# Política adicional para permissão de logs (CRÍTICA - deve vir antes da attachment)
-resource "aws_iam_role_policy" "ecs_logs" {
-  name = "logs-policy-${random_string.suffix.result}"
+# Política com permissões completas para CloudWatch Logs
+resource "aws_iam_role_policy" "ecs_logs_full" {
+  name = "logs-full-access-${random_string.suffix.result}"
   role = aws_iam_role.ecs_task_execution_role.id
 
   policy = jsonencode({
@@ -190,8 +190,8 @@ resource "aws_iam_role_policy" "ecs_logs" {
         "logs:CreateLogGroup",
         "logs:CreateLogStream",
         "logs:PutLogEvents",
-        "logs:TagResource",
-        "logs:DescribeLogGroups"
+        "logs:DescribeLogStreams",
+        "logs:TagResource"
       ]
       Resource = "*"
     }]
@@ -272,9 +272,25 @@ resource "aws_ecs_service" "app" {
 # CloudWatch Log Group
 resource "aws_cloudwatch_log_group" "ecs_logs" {
   name              = "/ecs/task-${random_string.suffix.result}"
-  retention_in_days = 1  # Reduzir retenção para economia de custos
+  retention_in_days = 1
 
   tags = {
     Name = "logs-${random_string.suffix.result}"
   }
+}
+
+# Outputs
+output "alb_dns_name" {
+  value       = aws_lb.app.dns_name
+  description = "DNS do Application Load Balancer"
+}
+
+output "ecs_cluster_name" {
+  value       = aws_ecs_cluster.main.name
+  description = "Nome do cluster ECS"
+}
+
+output "ecs_service_name" {
+  value       = aws_ecs_service.app.name
+  description = "Nome do serviço ECS"
 }
