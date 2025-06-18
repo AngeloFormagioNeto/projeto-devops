@@ -124,18 +124,28 @@ jobs:
       uses: hashicorp/setup-terraform@v3
       with:
         terraform_version: ${{ env.TF_VERSION }}
-        # Adicionado para limpar cache de providers
         terraform_wrapper: false
 
+    - name: Configure AWS CLI (temporário para resolver problema de registry)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+
     - name: Terraform Init
-      run: terraform init
+      run: |
+        terraform init -reconfigure \
+          -backend-config="region=us-east-1" \
+          -plugin-dir="$HOME/.terraform.d/plugins"
       working-directory: terraform
+      env:
+        TF_PLUGIN_CACHE_DIR: "$HOME/.terraform.d/plugin-cache"
 
     - name: Terraform Apply
       env:
         NETLIFY_TOKEN: ${{ secrets.NETLIFY_TOKEN }}
       run: |
-        terraform init -upgrade
         terraform apply -auto-approve -var="netlify_token=$NETLIFY_TOKEN"
       working-directory: terraform
 
