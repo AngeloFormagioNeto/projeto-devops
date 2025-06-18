@@ -1,4 +1,4 @@
-name: CI/CD Pipeline with Netlify Deploy
+name: CI/CD Pipeline
 
 on:
   push:
@@ -9,22 +9,23 @@ on:
 env:
   IMAGE_NAME: meu-app-react
   DOCKER_REGISTRY: docker.io
-  TF_VERSION: 1.8.4
+  TERRAFORM_DIR: terraform
+  AWS_REGION: us-east-1
 
 jobs:
-  build-test-package:
+  build-and-test:
     runs-on: ubuntu-latest
-    outputs:
-      image-tag: ${{ steps.set-tag.outputs.tag }}
 
     steps:
-    - name: Checkout code
+    - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Importante para o Terraform
 
-    - name: Setup Node.js
+    - name: Set up Node.js
       uses: actions/setup-node@v3
       with:
-        node-version: 18
+        node-version: '18'
         cache: 'npm'
 
     - name: Install dependencies
@@ -33,7 +34,7 @@ jobs:
         npm install --save-dev @babel/plugin-proposal-private-property-in-object
         npx update-browserslist-db@latest
 
-    - name: Run tests
+    - name: Test component rendering
       run: |
         npx react-scripts test \
         --testMatch="**/src/components/**/*.test.js" \
@@ -41,20 +42,8 @@ jobs:
         --detectOpenHandles \
         --passWithNoTests
 
-    - name: Build production bundle
+    - name: Run build
       run: npm run build
-
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-files
-        path: build/
-        retention-days: 1
-
-    - name: Set image tag
-      id: set-tag
-      run: |
-        echo "tag=$GITHUB_SHA" >> $GITHUB_OUTPUT
 
     - name: Build Docker image
       run: |
@@ -74,8 +63,8 @@ jobs:
         path: image.tar
         retention-days: 1
 
-  push-to-dockerhub:
-    needs: build-test-package
+  push-to-registry:
+    needs: build-and-test
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     
@@ -84,11 +73,12 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: docker-image
+        path: downloaded_image
 
     - name: Load Docker image
-      run: docker load -i image.tar
+      run: docker load -i downloaded_image/image.tar
 
-    - name: Login to Docker Hub
+    - name: Log in to Docker Hub
       uses: docker/login-action@v3
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -96,17 +86,17 @@ jobs:
 
     - name: Push Docker images
       run: |
-        docker push "${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA"
-        docker push "${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest"
+        docker push ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA
+        docker push ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
 
     - name: Print image info
       run: |
-        echo "Images pushed to Docker Hub"
-        echo "Latest: ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest"
-        echo "Versioned: ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA"
+        echo "Image pushed to:"
+        echo "${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest"
+        echo "${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA"
 
-  deploy-to-netlify:
-    needs: build-test-package
+  deploy-to-aws:
+    needs: [build-and-test, push-to-registry]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     
@@ -114,49 +104,41 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Download build artifacts
-      uses: actions/download-artifact@v4
-      with:
-        name: build-files
-        path: build
-
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
-      with:
-        terraform_version: ${{ env.TF_VERSION }}
-        terraform_wrapper: false
-
-    - name: Configure AWS CLI (temporário para resolver problema de registry)
+    - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: us-east-1
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Set up Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.8.0
 
     - name: Terraform Init
+      run: terraform init
+      working-directory: ${{ env.TERRAFORM_DIR }}
+
+    - name: Terraform Plan
       run: |
-        terraform init -reconfigure \
-          -backend-config="region=us-east-1" \
-          -plugin-dir="$HOME/.terraform.d/plugins"
-      working-directory: terraform
-      env:
-        TF_PLUGIN_CACHE_DIR: "$HOME/.terraform.d/plugin-cache"
+        terraform plan \
+          -var="app_image=${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA" \
+          -out=tfplan
+      working-directory: ${{ env.TERRAFORM_DIR }}
 
     - name: Terraform Apply
-      env:
-        NETLIFY_TOKEN: ${{ secrets.NETLIFY_TOKEN }}
-      run: |
-        terraform apply -auto-approve -var="netlify_token=$NETLIFY_TOKEN"
-      working-directory: terraform
+      run: terraform apply -auto-approve tfplan
+      working-directory: ${{ env.TERRAFORM_DIR }}
 
-    - name: Get site URL
-      id: site-url
+    - name: Get ALB DNS
+      id: alb
       run: |
-        url=$(terraform output -raw site_url)
-        echo "url=$url" >> $GITHUB_OUTPUT
-      working-directory: terraform
+        echo "url=http://$(terraform output -raw alb_dns_name)" >> $GITHUB_OUTPUT
+      working-directory: ${{ env.TERRAFORM_DIR }}
 
-    - name: Print deployment info
+    - name: Show Application URL
       run: |
-        echo "✅ Deployment successful!"
-        echo "🌐 Site URL: ${{ steps.site-url.outputs.url }}"
+        echo "Aplicação implantada com sucesso!"
+        echo "URL: ${{ steps.alb.outputs.url }}"
+        echo "Acesse em: http://${{ steps.alb.outputs.url }}"
