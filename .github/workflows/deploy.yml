@@ -11,7 +11,6 @@ env:
   DOCKER_REGISTRY: docker.io
   TERRAFORM_DIR: terraform
   AWS_REGION: us-east-1
-  APP_NAME: react-app
 
 jobs:
   build-and-test:
@@ -125,8 +124,11 @@ jobs:
       run: |
         # Usar SHA do commit para evitar conflitos
         echo "app_image=${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA" >> $GITHUB_ENV
-        # Gerar nome único para evitar conflitos de recursos
-        echo "app_name=react-app-$(date +%s)" >> $GITHUB_ENV
+        
+        # Gerar nome curto único
+        SHORT_NAME="app-$(echo $GITHUB_SHA | cut -c1-8)"
+        echo "app_name=$SHORT_NAME" >> $GITHUB_ENV
+        echo "Nome curto gerado: $SHORT_NAME"
 
     - name: Terraform Init
       run: terraform init -input=false
@@ -156,12 +158,12 @@ jobs:
       run: |
         terraform apply -auto-approve tfplan || \
         (echo "Primeira tentativa falhou. Recriando o plano..." && \
-        terraform refresh && \
-        terraform plan \
-          -var="app_name=${{ env.app_name }}" \
-          -var="app_image=${{ env.app_image }}" \
-          -out=tfplan-new && \
-        terraform apply -auto-approve tfplan-new)
+         terraform refresh && \
+         terraform plan \
+           -var="app_name=${{ env.app_name }}" \
+           -var="app_image=${{ env.app_image }}" \
+           -out=tfplan-new && \
+         terraform apply -auto-approve tfplan-new)
       working-directory: ${{ env.TERRAFORM_DIR }}
 
     - name: Get ALB DNS
@@ -194,11 +196,12 @@ jobs:
           })
       if: always() && github.event_name == 'pull_request'
 
-    - name: Cleanup on Failure
-      if: failure()
+    - name: Cleanup Infrastructure
+      if: always()
       run: |
-        echo "##[error]Deploy falhou. Iniciando limpeza..."
+        echo "##[group]Limpando infraestrutura"
         terraform destroy -auto-approve \
           -var="app_name=${{ env.app_name }}" \
-          -var="app_image=${{ env.app_image }}"
+          -var="app_image=nginx"
+        echo "##[endgroup]"
       working-directory: ${{ env.TERRAFORM_DIR }}

@@ -11,69 +11,44 @@ resource "random_string" "suffix" {
   numeric = true
 }
 
-# Função para truncar nomes
-locals {
-  truncated_app_name = substr(replace(var.app_name, "/[^a-zA-Z0-9-]/", ""), 0, min(24, length(var.app_name)))
+# Usar VPC padrão existente
+data "aws_vpc" "default" {
+  default = true
 }
 
-# VPC
-resource "aws_vpc" "main" {
-  cidr_block = "10.0.0.0/16"
-
-  tags = {
-    Name = "${var.app_name}-vpc"
+data "aws_subnets" "public" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
+  
+  filter {
+    name   = "map-public-ip-on-launch"
+    values = ["true"]
   }
 }
 
-# Subnets Públicas
-resource "aws_subnet" "public" {
-  count = 2
-
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = "10.0.${count.index}.0/24"
-  availability_zone       = "${var.region}${count.index == 0 ? "a" : "b"}"
-  map_public_ip_on_launch = true
-
-  tags = {
-    Name = "${var.app_name}-public-subnet-${count.index}"
+# Internet Gateway (já existe na VPC padrão)
+data "aws_internet_gateway" "default" {
+  filter {
+    name   = "attachment.vpc-id"
+    values = [data.aws_vpc.default.id]
   }
 }
 
-# Internet Gateway
-resource "aws_internet_gateway" "gw" {
-  vpc_id = aws_vpc.main.id
-
-  tags = {
-    Name = "${var.app_name}-igw"
+# Route Table (já existe na VPC padrão)
+data "aws_route_table" "public" {
+  vpc_id = data.aws_vpc.default.id
+  filter {
+    name   = "association.main"
+    values = ["true"]
   }
-}
-
-# Route Table Pública
-resource "aws_route_table" "public_rt" {
-  vpc_id = aws_vpc.main.id
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.gw.id
-  }
-
-  tags = {
-    Name = "${var.app_name}-public-rt"
-  }
-}
-
-# Associação das Subnets Públicas
-resource "aws_route_table_association" "public" {
-  count = length(aws_subnet.public)
-
-  subnet_id      = aws_subnet.public[count.index].id
-  route_table_id = aws_route_table.public_rt.id
 }
 
 # Security Group para o ALB
 resource "aws_security_group" "lb" {
-  name   = "${local.truncated_app_name}-lb-sg"
-  vpc_id = aws_vpc.main.id
+  name   = "lb-sg-${random_string.suffix.result}"
+  vpc_id = data.aws_vpc.default.id
 
   ingress {
     from_port   = 80
@@ -90,14 +65,14 @@ resource "aws_security_group" "lb" {
   }
 
   tags = {
-    Name = "${var.app_name}-lb-sg"
+    Name = "lb-sg-${random_string.suffix.result}"
   }
 }
 
 # Security Group para o ECS
 resource "aws_security_group" "ecs" {
-  name   = "${local.truncated_app_name}-ecs-sg"
-  vpc_id = aws_vpc.main.id
+  name   = "ecs-sg-${random_string.suffix.result}"
+  vpc_id = data.aws_vpc.default.id
 
   ingress {
     from_port       = var.app_port
@@ -114,16 +89,16 @@ resource "aws_security_group" "ecs" {
   }
 
   tags = {
-    Name = "${var.app_name}-ecs-sg"
+    Name = "ecs-sg-${random_string.suffix.result}"
   }
 }
 
 # Application Load Balancer
 resource "aws_lb" "app" {
-  name               = "${local.truncated_app_name}-lb-${random_string.suffix.result}"
+  name               = "alb-${random_string.suffix.result}"
   internal           = false
   load_balancer_type = "application"
-  subnets            = aws_subnet.public[*].id
+  subnets            = data.aws_subnets.public.ids
   security_groups    = [aws_security_group.lb.id]
   enable_deletion_protection = false
 
@@ -133,17 +108,17 @@ resource "aws_lb" "app" {
   }
 
   tags = {
-    Name = "${var.app_name}-lb"
+    Name = "alb-${random_string.suffix.result}"
   }
 }
 
 # Target Group
 resource "aws_lb_target_group" "app" {
-  name        = "${local.truncated_app_name}-tg-${random_string.suffix.result}"
+  name        = "tg-${random_string.suffix.result}"
   port        = var.app_port
   protocol    = "HTTP"
   target_type = "ip"
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = data.aws_vpc.default.id
 
   health_check {
     path                = "/"
@@ -155,7 +130,7 @@ resource "aws_lb_target_group" "app" {
   }
 
   tags = {
-    Name = "${var.app_name}-tg"
+    Name = "tg-${random_string.suffix.result}"
   }
 }
 
@@ -171,22 +146,22 @@ resource "aws_lb_listener" "front_end" {
   }
 
   tags = {
-    Name = "${var.app_name}-listener"
+    Name = "listener-${random_string.suffix.result}"
   }
 }
 
 # Cluster ECS
 resource "aws_ecs_cluster" "main" {
-  name = "${local.truncated_app_name}-cluster"
+  name = "cluster-${random_string.suffix.result}"
 
   tags = {
-    Name = "${var.app_name}-cluster"
+    Name = "cluster-${random_string.suffix.result}"
   }
 }
 
 # IAM Role para execução de tarefas
 resource "aws_iam_role" "ecs_task_execution_role" {
-  name = "${local.truncated_app_name}-ecs-task"
+  name = "ecs-role-${random_string.suffix.result}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -198,7 +173,7 @@ resource "aws_iam_role" "ecs_task_execution_role" {
   })
 
   tags = {
-    Name = "${var.app_name}-ecs-task-role"
+    Name = "ecs-role-${random_string.suffix.result}"
   }
 }
 
@@ -207,9 +182,9 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution_policy" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-# Política adicional para permissão de tags
-resource "aws_iam_role_policy" "ecs_logs_tagging" {
-  name = "${local.truncated_app_name}-logs-tag"
+# Política adicional para permissão de logs
+resource "aws_iam_role_policy" "ecs_logs" {
+  name = "logs-policy-${random_string.suffix.result}"
   role = aws_iam_role.ecs_task_execution_role.id
 
   policy = jsonencode({
@@ -220,7 +195,8 @@ resource "aws_iam_role_policy" "ecs_logs_tagging" {
         "logs:CreateLogGroup",
         "logs:CreateLogStream",
         "logs:PutLogEvents",
-        "logs:TagResource"
+        "logs:TagResource",
+        "logs:DescribeLogGroups"
       ]
       Resource = "*"
     }]
@@ -229,7 +205,7 @@ resource "aws_iam_role_policy" "ecs_logs_tagging" {
 
 # Task Definition
 resource "aws_ecs_task_definition" "app" {
-  family                   = "${local.truncated_app_name}-task"
+  family                   = "task-${random_string.suffix.result}"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   cpu                      = 256
@@ -253,7 +229,7 @@ resource "aws_ecs_task_definition" "app" {
     logConfiguration = {
       logDriver = "awslogs"
       options = {
-        awslogs-group         = "/ecs/${var.app_name}"
+        awslogs-group         = "/ecs/task-${random_string.suffix.result}"
         awslogs-region        = var.region
         awslogs-stream-prefix = "ecs"
       }
@@ -261,20 +237,20 @@ resource "aws_ecs_task_definition" "app" {
   }])
 
   tags = {
-    Name = "${var.app_name}-task"
+    Name = "task-${random_string.suffix.result}"
   }
 }
 
 # ECS Service
 resource "aws_ecs_service" "app" {
-  name            = "${local.truncated_app_name}-svc"
+  name            = "svc-${random_string.suffix.result}"
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.app.arn
   desired_count   = var.app_count
   launch_type     = "FARGATE"
 
   network_configuration {
-    subnets          = aws_subnet.public[*].id
+    subnets          = data.aws_subnets.public.ids
     security_groups  = [aws_security_group.ecs.id]
     assign_public_ip = true
   }
@@ -288,17 +264,17 @@ resource "aws_ecs_service" "app" {
   depends_on = [aws_lb_listener.front_end]
 
   tags = {
-    Name = "${var.app_name}-service"
+    Name = "svc-${random_string.suffix.result}"
   }
 }
 
 # CloudWatch Log Group
 resource "aws_cloudwatch_log_group" "ecs_logs" {
-  name              = "/ecs/${var.app_name}"
-  retention_in_days = 7
+  name              = "/ecs/task-${random_string.suffix.result}"
+  retention_in_days = 1  # Reduzir retenção para economia de custos
 
   tags = {
-    Name = "${var.app_name}-logs"
+    Name = "logs-${random_string.suffix.result}"
   }
 }
 
