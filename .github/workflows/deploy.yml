@@ -126,6 +126,10 @@ jobs:
       run: terraform init -input=false
       working-directory: ${{ env.TERRAFORM_DIR }}
 
+    - name: Auto-format Terraform
+      run: terraform fmt -recursive
+      working-directory: ${{ env.TERRAFORM_DIR }}
+
     - name: Terraform Format Check
       run: terraform fmt -check
       working-directory: ${{ env.TERRAFORM_DIR }}
