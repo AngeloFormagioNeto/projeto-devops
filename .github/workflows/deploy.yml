@@ -20,8 +20,6 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
 
     - name: Set up Node.js
       uses: actions/setup-node@v3
@@ -30,18 +28,10 @@ jobs:
         cache: 'npm'
 
     - name: Install dependencies
-      run: |
-        npm ci
-        npm install --save-dev @babel/plugin-proposal-private-property-in-object
-        npx update-browserslist-db@latest
+      run: npm ci
 
-    - name: Test component rendering
-      run: |
-        npx react-scripts test \
-        --testMatch="**/src/components/**/*.test.js" \
-        --watchAll=false \
-        --detectOpenHandles \
-        --passWithNoTests
+    - name: Run tests
+      run: npm test
 
     - name: Run build
       run: npm run build
@@ -118,28 +108,22 @@ jobs:
       uses: hashicorp/setup-terraform@v3
       with:
         terraform_version: 1.8.0
-        terraform_wrapper: false
 
     - name: Prepare Terraform Variables
       run: |
-        # Usar SHA do commit para evitar conflitos
         echo "app_image=${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA" >> $GITHUB_ENV
         
-        # Gerar nome curto único
         SHORT_NAME="app-$(echo $GITHUB_SHA | cut -c1-8)"
         echo "app_name=$SHORT_NAME" >> $GITHUB_ENV
-        echo "Nome curto gerado: $SHORT_NAME"
+        echo "environment=production" >> $GITHUB_ENV
+        echo "is_temporary=false" >> $GITHUB_ENV
 
     - name: Terraform Init
       run: terraform init -input=false
       working-directory: ${{ env.TERRAFORM_DIR }}
 
-    - name: Auto-format Terraform
+    - name: Terraform Format
       run: terraform fmt -recursive
-      working-directory: ${{ env.TERRAFORM_DIR }}
-
-    - name: Terraform Format Check
-      run: terraform fmt -check
       working-directory: ${{ env.TERRAFORM_DIR }}
 
     - name: Terraform Validate
@@ -153,16 +137,14 @@ jobs:
           -var="app_image=${{ env.app_image }}" \
           -var="app_port=80" \
           -var="app_count=1" \
+          -var="environment=${{ env.environment }}" \
+          -var="is_temporary=${{ env.is_temporary }}" \
           -out=tfplan
       working-directory: ${{ env.TERRAFORM_DIR }}
 
     - name: Terraform Apply
-      run: |
-        terraform apply -auto-approve -input=false tfplan || \
-        (echo "##[error]Terraform apply failed"; exit 1)
+      run: terraform apply -auto-approve -input=false tfplan
       working-directory: ${{ env.TERRAFORM_DIR }}
-      env:
-        TF_INPUT: 0
 
     - name: Get ALB DNS
       id: alb-dns
@@ -174,10 +156,8 @@ jobs:
       run: |
         echo "Aplicação implantada com sucesso!"
         echo "URL: ${{ steps.alb-dns.outputs.url }}"
-        echo "Acesse em: ${{ steps.alb-dns.outputs.url }}"
         
-    - name: Post Deployment Health Check
+    - name: Health Check
       run: |
-        # Aguarda 60 segundos para o deploy completar
         sleep 60
-        curl --retry 5 --retry-delay 15 --max-time 10 -sSf ${{ steps.alb-dns.outputs.url }}
+        curl --retry 3 --retry-delay 20 -sSf ${{ steps.alb-dns.outputs.url }}

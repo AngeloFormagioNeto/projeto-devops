@@ -24,3 +24,14 @@ variable "app_count" {
   type        = number
   default     = 1
 }
+
+variable "environment" {
+  description = "Ambiente de implantação (dev, staging, prod)"
+  type        = string
+}
+
+variable "is_temporary" {
+  description = "Indica se a infraestrutura é temporária"
+  type        = bool
+  default     = false
+}

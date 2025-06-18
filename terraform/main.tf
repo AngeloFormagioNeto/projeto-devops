@@ -4,14 +4,22 @@ provider "aws" {
 
 provider "random" {}
 
+locals {
+  common_tags = {
+    Project     = var.app_name
+    Environment = var.environment
+    Temporary   = var.is_temporary ? "true" : "false"
+    Terraform   = "true"
+  }
+}
+
 resource "random_string" "suffix" {
   length  = 4
   upper   = false
   special = false
-  numeric = true
 }
 
-# Usar VPC padrão existente
+# VPC Configuration
 data "aws_vpc" "default" {
   default = true
 }
@@ -28,29 +36,14 @@ data "aws_subnets" "public" {
   }
 }
 
-# Internet Gateway (já existe na VPC padrão)
-data "aws_internet_gateway" "default" {
-  filter {
-    name   = "attachment.vpc-id"
-    values = [data.aws_vpc.default.id]
-  }
-}
-
-# Route Table (já existe na VPC padrão)
-data "aws_route_table" "public" {
-  vpc_id = data.aws_vpc.default.id
-  filter {
-    name   = "association.main"
-    values = ["true"]
-  }
-}
-
-# Security Group para o ALB
+# Security Groups
 resource "aws_security_group" "lb" {
-  name   = "lb-sg-${random_string.suffix.result}"
-  vpc_id = data.aws_vpc.default.id
+  name        = "lb-sg-${random_string.suffix.result}"
+  description = "ALB Security Group"
+  vpc_id      = data.aws_vpc.default.id
 
   ingress {
+    description = "HTTP Access"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
@@ -58,23 +51,25 @@ resource "aws_security_group" "lb" {
   }
 
   egress {
+    description = "Outbound Access"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = {
+  tags = merge(local.common_tags, {
     Name = "lb-sg-${random_string.suffix.result}"
-  }
+  })
 }
 
-# Security Group para o ECS
 resource "aws_security_group" "ecs" {
-  name   = "ecs-sg-${random_string.suffix.result}"
-  vpc_id = data.aws_vpc.default.id
+  name        = "ecs-sg-${random_string.suffix.result}"
+  description = "ECS Security Group"
+  vpc_id      = data.aws_vpc.default.id
 
   ingress {
+    description     = "App Port Access"
     from_port       = var.app_port
     to_port         = var.app_port
     protocol        = "tcp"
@@ -82,18 +77,19 @@ resource "aws_security_group" "ecs" {
   }
 
   egress {
+    description = "Outbound Access"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = {
+  tags = merge(local.common_tags, {
     Name = "ecs-sg-${random_string.suffix.result}"
-  }
+  })
 }
 
-# Application Load Balancer
+# Load Balancer
 resource "aws_lb" "app" {
   name               = "alb-${random_string.suffix.result}"
   internal           = false
@@ -102,17 +98,11 @@ resource "aws_lb" "app" {
   security_groups    = [aws_security_group.lb.id]
   enable_deletion_protection = false
 
-  timeouts {
-    create = "10m"
-    delete = "10m"
-  }
-
-  tags = {
+  tags = merge(local.common_tags, {
     Name = "alb-${random_string.suffix.result}"
-  }
+  })
 }
 
-# Target Group
 resource "aws_lb_target_group" "app" {
   name        = "tg-${random_string.suffix.result}"
   port        = var.app_port
@@ -129,15 +119,14 @@ resource "aws_lb_target_group" "app" {
     matcher             = "200"
   }
 
-  tags = {
+  tags = merge(local.common_tags, {
     Name = "tg-${random_string.suffix.result}"
-  }
+  })
 }
 
-# Listener do ALB
 resource "aws_lb_listener" "front_end" {
   load_balancer_arn = aws_lb.app.arn
-  port              = "80"
+  port              = 80
   protocol          = "HTTP"
 
   default_action {
@@ -145,21 +134,21 @@ resource "aws_lb_listener" "front_end" {
     target_group_arn = aws_lb_target_group.app.arn
   }
 
-  tags = {
+  tags = merge(local.common_tags, {
     Name = "listener-${random_string.suffix.result}"
-  }
+  })
 }
 
-# Cluster ECS
+# ECS Cluster
 resource "aws_ecs_cluster" "main" {
   name = "cluster-${random_string.suffix.result}"
 
-  tags = {
+  tags = merge(local.common_tags, {
     Name = "cluster-${random_string.suffix.result}"
-  }
+  })
 }
 
-# IAM Role para execução de tarefas
+# IAM Role with Least Privilege
 resource "aws_iam_role" "ecs_task_execution_role" {
   name = "ecs-role-${random_string.suffix.result}"
 
@@ -172,14 +161,13 @@ resource "aws_iam_role" "ecs_task_execution_role" {
     }]
   })
 
-  tags = {
+  tags = merge(local.common_tags, {
     Name = "ecs-role-${random_string.suffix.result}"
-  }
+  })
 }
 
-# Política com permissões completas para CloudWatch Logs
-resource "aws_iam_role_policy" "ecs_logs_full" {
-  name = "logs-full-access-${random_string.suffix.result}"
+resource "aws_iam_role_policy" "ecs_logs" {
+  name = "logs-access-${random_string.suffix.result}"
   role = aws_iam_role.ecs_task_execution_role.id
 
   policy = jsonencode({
@@ -187,20 +175,22 @@ resource "aws_iam_role_policy" "ecs_logs_full" {
     Statement = [{
       Effect   = "Allow"
       Action   = [
-        "logs:*"  # Permissão ampla temporária
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "logs:DescribeLogGroups",
+        "logs:DescribeLogStreams"
       ]
-      Resource = "*"
+      Resource = "arn:aws:logs:${var.region}:*:log-group:/ecs/task-${random_string.suffix.result}:*"
     }]
   })
 }
 
-# DEPOIS adicionamos a política padrão
 resource "aws_iam_role_policy_attachment" "ecs_task_execution_policy" {
   role       = aws_iam_role.ecs_task_execution_role.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-# Task Definition
+# ECS Task Definition
 resource "aws_ecs_task_definition" "app" {
   family                   = "task-${random_string.suffix.result}"
   network_mode             = "awsvpc"
@@ -212,8 +202,6 @@ resource "aws_ecs_task_definition" "app" {
   container_definitions = jsonencode([{
     name      = "react-container"
     image     = var.app_image
-    cpu       = 256
-    memory    = 512
     essential = true
     portMappings = [{
       containerPort = var.app_port
@@ -226,16 +214,16 @@ resource "aws_ecs_task_definition" "app" {
     logConfiguration = {
       logDriver = "awslogs"
       options = {
-        awslogs-group         = "/ecs/task-${random_string.suffix.result}"
+        awslogs-group         = aws_cloudwatch_log_group.ecs_logs.name
         awslogs-region        = var.region
         awslogs-stream-prefix = "ecs"
       }
     }
   }])
 
-  tags = {
+  tags = merge(local.common_tags, {
     Name = "task-${random_string.suffix.result}"
-  }
+  })
 }
 
 # ECS Service
@@ -258,18 +246,25 @@ resource "aws_ecs_service" "app" {
     container_port   = var.app_port
   }
 
-  depends_on = [
-    aws_lb_listener.front_end,
-    aws_iam_role_policy.ecs_logs_full
-  ]
-
-  tags = {
+  tags = merge(local.common_tags, {
     Name = "svc-${random_string.suffix.result}"
-  }
+  })
 }
 
-# CloudWatch Log Group (SEM TAGS)
+# CloudWatch Log Group with Tags
 resource "aws_cloudwatch_log_group" "ecs_logs" {
   name              = "/ecs/task-${random_string.suffix.result}"
-  retention_in_days = 1
+  retention_in_days = var.is_temporary ? 1 : 7
+  tags              = local.common_tags
+}
+
+# Outputs
+output "alb_dns_name" {
+  description = "Application Load Balancer DNS Name"
+  value       = aws_lb.app.dns_name
+}
+
+output "ecs_cluster_name" {
+  description = "ECS Cluster Name"
+  value       = aws_ecs_cluster.main.name
 }
