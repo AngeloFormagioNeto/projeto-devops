@@ -151,39 +151,31 @@ jobs:
         terraform plan -input=false \
           -var="app_name=${{ env.app_name }}" \
           -var="app_image=${{ env.app_image }}" \
+          -var="app_port=80" \
+          -var="app_count=1" \
           -out=tfplan
       working-directory: ${{ env.TERRAFORM_DIR }}
 
     - name: Terraform Apply
       run: |
         # Primeira tentativa
-        terraform apply -auto-approve -input=false \
-          -var="app_name=${{ env.app_name }}" \
-          -var="app_image=${{ env.app_image }}" \
-          -var="app_port=80" \
-          -var="app_count=1" \
-          tfplan || \
+        terraform apply -auto-approve -input=false tfplan || \
         (echo "Primeira tentativa falhou. Recriando o plano..." && \
-        # Recarrega o estado
-        terraform refresh -input=false \
-          -var="app_name=${{ env.app_name }}" \
-          -var="app_image=${{ env.app_image }}" \
-          -var="app_port=80" \
-          -var="app_count=1" && \
-        # Recria o plano com as mesmas variáveis
-        terraform plan -input=false \
-          -var="app_name=${{ env.app_name }}" \
-          -var="app_image=${{ env.app_image }}" \
-          -var="app_port=80" \
-          -var="app_count=1" \
-          -out=tfplan-new && \
-        # Segunda tentativa
-        terraform apply -auto-approve -input=false \
-          -var="app_name=${{ env.app_name }}" \
-          -var="app_image=${{ env.app_image }}" \
-          -var="app_port=80" \
-          -var="app_count=1" \
-          tfplan-new)
+         # Recarrega o estado
+         terraform refresh -input=false \
+           -var="app_name=${{ env.app_name }}" \
+           -var="app_image=${{ env.app_image }}" \
+           -var="app_port=80" \
+           -var="app_count=1" && \
+         # Recria o plano com as mesmas variáveis
+         terraform plan -input=false \
+           -var="app_name=${{ env.app_name }}" \
+           -var="app_image=${{ env.app_image }}" \
+           -var="app_port=80" \
+           -var="app_count=1" \
+           -out=tfplan-new && \
+         # Segunda tentativa - aplica SEM variáveis
+         terraform apply -auto-approve -input=false tfplan-new)
       working-directory: ${{ env.TERRAFORM_DIR }}
       env:
         TF_INPUT: 0
@@ -224,6 +216,8 @@ jobs:
         echo "##[group]Limpando infraestrutura"
         terraform destroy -auto-approve -input=false \
           -var="app_name=${{ env.app_name }}" \
-          -var="app_image=nginx"
+          -var="app_image=nginx" \
+          -var="app_port=80" \
+          -var="app_count=1"
         echo "##[endgroup]"
       working-directory: ${{ env.TERRAFORM_DIR }}
