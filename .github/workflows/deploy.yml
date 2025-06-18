@@ -11,16 +11,18 @@ env:
   DOCKER_REGISTRY: docker.io
   TERRAFORM_DIR: terraform
   AWS_REGION: us-east-1
+  APP_NAME: react-app
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0  # Importante para o Terraform
+        fetch-depth: 0  # Necessário para o Terraform
 
     - name: Set up Node.js
       uses: actions/setup-node@v3
@@ -52,6 +54,7 @@ jobs:
           -t ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest \
           .
         
+        # Salvar ambas as tags no arquivo TAR
         docker save -o image.tar \
           ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA \
           ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
@@ -67,6 +70,7 @@ jobs:
     needs: build-and-test
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    timeout-minutes: 20
     
     steps:
     - name: Download Docker image
@@ -99,6 +103,7 @@ jobs:
     needs: [build-and-test, push-to-registry]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    timeout-minutes: 30
     
     steps:
     - name: Checkout repository
@@ -115,14 +120,24 @@ jobs:
       uses: hashicorp/setup-terraform@v3
       with:
         terraform_version: 1.8.0
+        terraform_wrapper: false
 
     - name: Terraform Init
-      run: terraform init
+      run: terraform init -input=false
+      working-directory: ${{ env.TERRAFORM_DIR }}
+
+    - name: Terraform Format Check
+      run: terraform fmt -check
+      working-directory: ${{ env.TERRAFORM_DIR }}
+
+    - name: Terraform Validate
+      run: terraform validate
       working-directory: ${{ env.TERRAFORM_DIR }}
 
     - name: Terraform Plan
       run: |
         terraform plan \
+          -var="app_name=${{ env.APP_NAME }}" \
           -var="app_image=${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA" \
           -out=tfplan
       working-directory: ${{ env.TERRAFORM_DIR }}
@@ -132,7 +147,7 @@ jobs:
       working-directory: ${{ env.TERRAFORM_DIR }}
 
     - name: Get ALB DNS
-      id: alb
+      id: alb-dns
       run: |
         echo "url=http://$(terraform output -raw alb_dns_name)" >> $GITHUB_OUTPUT
       working-directory: ${{ env.TERRAFORM_DIR }}
@@ -140,5 +155,23 @@ jobs:
     - name: Show Application URL
       run: |
         echo "Aplicação implantada com sucesso!"
-        echo "URL: ${{ steps.alb.outputs.url }}"
-        echo "Acesse em: http://${{ steps.alb.outputs.url }}"
+        echo "URL: ${{ steps.alb-dns.outputs.url }}"
+        echo "Acesse em: ${{ steps.alb-dns.outputs.url }}"
+        
+    - name: Post Deployment Health Check
+      run: |
+        # Aguarda 30 segundos para o deploy completar
+        sleep 30
+        curl --retry 5 --retry-delay 10 --max-time 5 -sSf ${{ steps.alb-dns.outputs.url }}
+
+    - name: Save Application URL
+      uses: actions/github-script@v7
+      with:
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: "✅ Aplicação implantada com sucesso!\n\nURL: ${{ steps.alb-dns.outputs.url }}"
+          })
+      if: always() && github.event_name == 'pull_request'
