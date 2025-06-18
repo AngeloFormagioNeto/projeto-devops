@@ -156,12 +156,12 @@ jobs:
       run: |
         terraform apply -auto-approve tfplan || \
         (echo "Primeira tentativa falhou. Recriando o plano..." && \
-         terraform refresh -auto-approve && \
-         terraform plan \
-           -var="app_name=${{ env.app_name }}" \
-           -var="app_image=${{ env.app_image }}" \
-           -out=tfplan-new && \
-         terraform apply -auto-approve tfplan-new)
+        terraform refresh && \
+        terraform plan \
+          -var="app_name=${{ env.app_name }}" \
+          -var="app_image=${{ env.app_image }}" \
+          -out=tfplan-new && \
+        terraform apply -auto-approve tfplan-new)
       working-directory: ${{ env.TERRAFORM_DIR }}
 
     - name: Get ALB DNS

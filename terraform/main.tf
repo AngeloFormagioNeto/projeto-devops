@@ -4,8 +4,16 @@ provider "aws" {
 
 provider "random" {}
 
-resource "random_id" "suffix" {
-  byte_length = 4
+resource "random_string" "suffix" {
+  length  = 4
+  upper   = false
+  special = false
+  numeric = true
+}
+
+# Função para truncar nomes
+locals {
+  truncated_app_name = substr(replace(var.app_name, "/[^a-zA-Z0-9-]/", ""), 0, min(24, length(var.app_name)))
 }
 
 # VPC
@@ -64,7 +72,7 @@ resource "aws_route_table_association" "public" {
 
 # Security Group para o ALB
 resource "aws_security_group" "lb" {
-  name   = "${var.app_name}-lb-sg"
+  name   = "${local.truncated_app_name}-lb-sg"
   vpc_id = aws_vpc.main.id
 
   ingress {
@@ -88,7 +96,7 @@ resource "aws_security_group" "lb" {
 
 # Security Group para o ECS
 resource "aws_security_group" "ecs" {
-  name   = "${var.app_name}-ecs-sg"
+  name   = "${local.truncated_app_name}-ecs-sg"
   vpc_id = aws_vpc.main.id
 
   ingress {
@@ -112,7 +120,7 @@ resource "aws_security_group" "ecs" {
 
 # Application Load Balancer
 resource "aws_lb" "app" {
-  name               = "${replace(var.app_name, "/[^a-zA-Z0-9-]/", "")}-lb-${random_id.suffix.dec}"  # Usar dec em vez de hex
+  name               = "${local.truncated_app_name}-lb-${random_string.suffix.result}"
   internal           = false
   load_balancer_type = "application"
   subnets            = aws_subnet.public[*].id
@@ -131,7 +139,7 @@ resource "aws_lb" "app" {
 
 # Target Group
 resource "aws_lb_target_group" "app" {
-  name        = "${replace(var.app_name, "/[^a-zA-Z0-9-]/", "")}-tg-${random_id.suffix.dec}"  # Usar dec em vez de hex
+  name        = "${local.truncated_app_name}-tg-${random_string.suffix.result}"
   port        = var.app_port
   protocol    = "HTTP"
   target_type = "ip"
@@ -169,7 +177,7 @@ resource "aws_lb_listener" "front_end" {
 
 # Cluster ECS
 resource "aws_ecs_cluster" "main" {
-  name = "${var.app_name}-cluster"
+  name = "${local.truncated_app_name}-cluster"
 
   tags = {
     Name = "${var.app_name}-cluster"
@@ -178,7 +186,7 @@ resource "aws_ecs_cluster" "main" {
 
 # IAM Role para execução de tarefas
 resource "aws_iam_role" "ecs_task_execution_role" {
-  name = "${var.app_name}-ecs-task-execution-role"
+  name = "${local.truncated_app_name}-ecs-task"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -201,14 +209,19 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution_policy" {
 
 # Política adicional para permissão de tags
 resource "aws_iam_role_policy" "ecs_logs_tagging" {
-  name = "${var.app_name}-ecs-logs-tagging"
+  name = "${local.truncated_app_name}-logs-tag"
   role = aws_iam_role.ecs_task_execution_role.id
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect   = "Allow"
-      Action   = "logs:TagResource"
+      Action   = [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "logs:TagResource"
+      ]
       Resource = "*"
     }]
   })
@@ -216,7 +229,7 @@ resource "aws_iam_role_policy" "ecs_logs_tagging" {
 
 # Task Definition
 resource "aws_ecs_task_definition" "app" {
-  family                   = "${var.app_name}-task"
+  family                   = "${local.truncated_app_name}-task"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   cpu                      = 256
@@ -224,7 +237,7 @@ resource "aws_ecs_task_definition" "app" {
   execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
 
   container_definitions = jsonencode([{
-    name      = "react-app-container"  # Nome fixo para o container
+    name      = "react-container"
     image     = var.app_image
     cpu       = 256
     memory    = 512
@@ -254,7 +267,7 @@ resource "aws_ecs_task_definition" "app" {
 
 # ECS Service
 resource "aws_ecs_service" "app" {
-  name            = "${var.app_name}-service"
+  name            = "${local.truncated_app_name}-svc"
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.app.arn
   desired_count   = var.app_count
@@ -268,7 +281,7 @@ resource "aws_ecs_service" "app" {
 
   load_balancer {
     target_group_arn = aws_lb_target_group.app.arn
-    container_name   = "react-app-container"  # Deve corresponder ao nome na task definition
+    container_name   = "react-container"
     container_port   = var.app_port
   }
 
