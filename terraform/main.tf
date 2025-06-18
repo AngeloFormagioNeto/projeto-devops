@@ -177,12 +177,7 @@ resource "aws_iam_role" "ecs_task_execution_role" {
   }
 }
 
-resource "aws_iam_role_policy_attachment" "ecs_task_execution_policy" {
-  role       = aws_iam_role.ecs_task_execution_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
-}
-
-# Política adicional para permissão de logs
+# Política adicional para permissão de logs (CRÍTICA - deve vir antes da attachment)
 resource "aws_iam_role_policy" "ecs_logs" {
   name = "logs-policy-${random_string.suffix.result}"
   role = aws_iam_role.ecs_task_execution_role.id
@@ -201,6 +196,12 @@ resource "aws_iam_role_policy" "ecs_logs" {
       Resource = "*"
     }]
   })
+}
+
+# DEPOIS adicionamos a política padrão
+resource "aws_iam_role_policy_attachment" "ecs_task_execution_policy" {
+  role       = aws_iam_role.ecs_task_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
 # Task Definition

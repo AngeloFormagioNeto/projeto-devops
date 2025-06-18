@@ -148,7 +148,7 @@ jobs:
 
     - name: Terraform Plan
       run: |
-        terraform plan \
+        terraform plan -input=false \
           -var="app_name=${{ env.app_name }}" \
           -var="app_image=${{ env.app_image }}" \
           -out=tfplan
@@ -156,15 +156,21 @@ jobs:
 
     - name: Terraform Apply
       run: |
-        terraform apply -auto-approve tfplan || \
+        # Primeira tentativa
+        terraform apply -auto-approve -input=false tfplan || \
         (echo "Primeira tentativa falhou. Recriando o plano..." && \
-         terraform refresh && \
-         terraform plan \
+         # Recarrega o estado
+         terraform refresh -input=false && \
+         # Recria o plano com as mesmas variáveis
+         terraform plan -input=false \
            -var="app_name=${{ env.app_name }}" \
            -var="app_image=${{ env.app_image }}" \
            -out=tfplan-new && \
-         terraform apply -auto-approve tfplan-new)
+         # Segunda tentativa
+         terraform apply -auto-approve -input=false tfplan-new)
       working-directory: ${{ env.TERRAFORM_DIR }}
+      env:
+        TF_INPUT: 0 # Desabilita prompts interativos
 
     - name: Get ALB DNS
       id: alb-dns
@@ -200,7 +206,7 @@ jobs:
       if: always()
       run: |
         echo "##[group]Limpando infraestrutura"
-        terraform destroy -auto-approve \
+        terraform destroy -auto-approve -input=false \
           -var="app_name=${{ env.app_name }}" \
           -var="app_image=nginx"
         echo "##[endgroup]"

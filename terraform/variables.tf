@@ -4,8 +4,8 @@ variable "region" {
 }
 
 variable "app_name" {
-  description = "Nome da aplicação"
-  default     = "react-app"
+  description = "Nome curto da aplicação"
+  type        = string
 }
 
 variable "app_image" {
@@ -15,10 +15,12 @@ variable "app_image" {
 
 variable "app_port" {
   description = "Porta do container"
+  type        = number
   default     = 80
 }
 
 variable "app_count" {
   description = "Número de instâncias"
+  type        = number
   default     = 1
 }
