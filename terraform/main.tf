@@ -1,7 +1,7 @@
 terraform {
   required_providers {
     netlify = {
-      source = "netlify/netlify"
+      source  = "netlify/netlify"
       version = "~> 3.0"
     }
   }
@@ -16,13 +16,11 @@ resource "netlify_site" "react_app" {
 
   build_settings {
     base_dir    = "build"
-    build_cmd   = "npm run build"
     deploy_dir  = "build"
   }
 }
 
 resource "netlify_deploy" "production" {
   site_id = netlify_site.react_app.id
-
-  dir = "build"
+  dir     = "${path.root}/../build"
 }
