@@ -156,34 +156,10 @@ jobs:
           -out=tfplan
       working-directory: ${{ env.TERRAFORM_DIR }}
 
-    - name: Verify IAM Permissions
-      run: |
-        # Verifica as permissões da role
-        aws iam list-attached-role-policies --role-name ${{ env.app_name }}-role
-        aws iam list-role-policies --role-name ${{ env.app_name }}-role
-        aws iam get-role-policy --role-name ${{ env.app_name }}-role --policy-name logs-full-access-*
-      working-directory: ${{ env.TERRAFORM_DIR }}
-
     - name: Terraform Apply
       run: |
-        # Primeira tentativa
         terraform apply -auto-approve -input=false tfplan || \
-        (echo "Primeira tentativa falhou. Recriando o plano..." && \
-         # Recarrega o estado
-         terraform refresh -input=false \
-           -var="app_name=${{ env.app_name }}" \
-           -var="app_image=${{ env.app_image }}" \
-           -var="app_port=80" \
-           -var="app_count=1" && \
-         # Recria o plano com as mesmas variáveis
-         terraform plan -input=false \
-           -var="app_name=${{ env.app_name }}" \
-           -var="app_image=${{ env.app_image }}" \
-           -var="app_port=80" \
-           -var="app_count=1" \
-           -out=tfplan-new && \
-         # Segunda tentativa - aplica SEM variáveis
-         terraform apply -auto-approve -input=false tfplan-new)
+        (echo "##[error]Terraform apply failed"; exit 1)
       working-directory: ${{ env.TERRAFORM_DIR }}
       env:
         TF_INPUT: 0
@@ -205,27 +181,3 @@ jobs:
         # Aguarda 60 segundos para o deploy completar
         sleep 60
         curl --retry 5 --retry-delay 15 --max-time 10 -sSf ${{ steps.alb-dns.outputs.url }}
-
-    - name: Save Application URL
-      uses: actions/github-script@v7
-      with:
-        script: |
-          github.rest.issues.createComment({
-            issue_number: context.issue.number,
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            body: "✅ Aplicação implantada com sucesso!\n\nURL: ${{ steps.alb-dns.outputs.url }}\n\nEsta URL será válida por aproximadamente 1 hora."
-          })
-      if: always() && github.event_name == 'pull_request'
-
-    - name: Cleanup Infrastructure
-      if: always()
-      run: |
-        echo "##[group]Limpando infraestrutura"
-        terraform destroy -auto-approve -input=false \
-          -var="app_name=${{ env.app_name }}" \
-          -var="app_image=nginx" \
-          -var="app_port=80" \
-          -var="app_count=1"
-        echo "##[endgroup]"
-      working-directory: ${{ env.TERRAFORM_DIR }}
