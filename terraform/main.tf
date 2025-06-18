@@ -5,7 +5,7 @@ provider "aws" {
 # VPC
 resource "aws_vpc" "main" {
   cidr_block = "10.0.0.0/16"
-  
+
   tags = {
     Name = "${var.app_name}-vpc"
   }
@@ -15,11 +15,11 @@ resource "aws_vpc" "main" {
 resource "aws_subnet" "public" {
   count = 2
 
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = "10.0.${count.index}.0/24"
-  availability_zone = "${var.region}${count.index == 0 ? "a" : "b"}"
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.${count.index}.0/24"
+  availability_zone       = "${var.region}${count.index == 0 ? "a" : "b"}"
   map_public_ip_on_launch = true
-  
+
   tags = {
     Name = "${var.app_name}-public-subnet-${count.index}"
   }
@@ -208,16 +208,18 @@ resource "aws_ecs_task_definition" "app" {
     cpu       = 256
     memory    = 512
     essential = true
-    portMappings = [{
-      containerPort = var.app_port
-      hostPort      = var.app_port
-    }]
-    
+    portMappings = [
+      {
+        containerPort = var.app_port
+        hostPort      = var.app_port
+      }
+    ]
+
     # Configurações adicionais para React
     environment = [
       { name = "NODE_ENV", value = "production" }
     ]
-    
+
     logConfiguration = {
       logDriver = "awslogs"
       options = {
@@ -242,8 +244,8 @@ resource "aws_ecs_service" "app" {
   launch_type     = "FARGATE"
 
   network_configuration {
-    subnets          = aws_subnet.public[*].id
-    security_groups  = [aws_security_group.ecs.id]
+    subnets         = aws_subnet.public[*].id
+    security_groups = [aws_security_group.ecs.id]
     assign_public_ip = true
   }
 
