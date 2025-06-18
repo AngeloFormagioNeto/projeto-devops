@@ -143,8 +143,15 @@ jobs:
       working-directory: ${{ env.TERRAFORM_DIR }}
 
     - name: Terraform Apply
-      run: terraform apply -auto-approve -input=false tfplan
+      run: |
+        # Aplicar com tratamento de erro
+        terraform apply -auto-approve -input=false tfplan || \
+        (echo "##[error]Terraform apply failed"; exit 1)
+        
+        # Forçar saída com código de erro em caso de falha
       working-directory: ${{ env.TERRAFORM_DIR }}
+      env:
+        TF_INPUT: 0
 
     - name: Get ALB DNS
       id: alb-dns

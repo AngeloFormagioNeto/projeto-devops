@@ -257,14 +257,3 @@ resource "aws_cloudwatch_log_group" "ecs_logs" {
   retention_in_days = var.is_temporary ? 1 : 7
   tags              = local.common_tags
 }
-
-# Outputs
-output "alb_dns_name" {
-  description = "Application Load Balancer DNS Name"
-  value       = aws_lb.app.dns_name
-}
-
-output "ecs_cluster_name" {
-  description = "ECS Cluster Name"
-  value       = aws_ecs_cluster.main.name
-}
