@@ -156,6 +156,14 @@ jobs:
           -out=tfplan
       working-directory: ${{ env.TERRAFORM_DIR }}
 
+    - name: Verify IAM Permissions
+      run: |
+        # Verifica as permissões da role
+        aws iam list-attached-role-policies --role-name ${{ env.app_name }}-role
+        aws iam list-role-policies --role-name ${{ env.app_name }}-role
+        aws iam get-role-policy --role-name ${{ env.app_name }}-role --policy-name logs-full-access-*
+      working-directory: ${{ env.TERRAFORM_DIR }}
+
     - name: Terraform Apply
       run: |
         # Primeira tentativa

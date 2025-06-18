@@ -187,11 +187,7 @@ resource "aws_iam_role_policy" "ecs_logs_full" {
     Statement = [{
       Effect   = "Allow"
       Action   = [
-        "logs:CreateLogGroup",
-        "logs:CreateLogStream",
-        "logs:PutLogEvents",
-        "logs:DescribeLogStreams",
-        "logs:TagResource"
+        "logs:*"  # Permissão ampla temporária
       ]
       Resource = "*"
     }]
@@ -262,19 +258,39 @@ resource "aws_ecs_service" "app" {
     container_port   = var.app_port
   }
 
-  depends_on = [aws_lb_listener.front_end]
+  depends_on = [
+    aws_lb_listener.front_end,
+    aws_iam_role_policy.ecs_logs_full  # Dependência explícita
+  ]
 
   tags = {
     Name = "svc-${random_string.suffix.result}"
   }
 }
 
-# CloudWatch Log Group
+# CloudWatch Log Group (SEM TAGS)
 resource "aws_cloudwatch_log_group" "ecs_logs" {
   name              = "/ecs/task-${random_string.suffix.result}"
   retention_in_days = 1
 
-  tags = {
-    Name = "logs-${random_string.suffix.result}"
-  }
+  # Removemos as tags para evitar o erro de permissão
+  # tags = {
+  #   Name = "logs-${random_string.suffix.result}"
+  # }
+}
+
+# Outputs
+output "alb_dns_name" {
+  value       = aws_lb.app.dns_name
+  description = "DNS do Application Load Balancer"
+}
+
+output "ecs_cluster_name" {
+  value       = aws_ecs_cluster.main.name
+  description = "Nome do cluster ECS"
+}
+
+output "ecs_service_name" {
+  value       = aws_ecs_service.app.name
+  description = "Nome do serviço ECS"
 }
