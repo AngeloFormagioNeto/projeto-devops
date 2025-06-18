@@ -141,14 +141,25 @@ jobs:
     - name: Terraform Plan
       run: |
         terraform plan \
-          -var="app_name=${{ env.APP_NAME }}" \
-          -var="app_image=${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA" \
+          -var="app_name=${{ env.app_name }}" \
+          -var="app_image=${{ env.app_image }}" \
           -out=tfplan
       working-directory: ${{ env.TERRAFORM_DIR }}
+    
+    - name: Prepare Terraform Variables
+      run: |
+        # Usar imagem mais recente para evitar conflito de tags
+        echo "app_image=${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA" >> $GITHUB_ENV
+        # Nome único para evitar conflitos
+        echo "app_name=react-app-$(date +%s)" >> $GITHUB_ENV
 
     - name: Terraform Apply
-      run: terraform apply -auto-approve tfplan
+      run: |
+        terraform apply -auto-approve tfplan || \
+        (echo "Primeira tentativa falhou. Tentando novamente..." && \
+        terraform apply -auto-approve tfplan)
       working-directory: ${{ env.TERRAFORM_DIR }}
+      timeout-minutes: 30
 
     - name: Get ALB DNS
       id: alb-dns

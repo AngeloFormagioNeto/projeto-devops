@@ -2,6 +2,12 @@ provider "aws" {
   region = var.region
 }
 
+provider "random" {}
+
+resource "random_id" "suffix" {
+  byte_length = 4
+}
+
 # VPC
 resource "aws_vpc" "main" {
   cidr_block = "10.0.0.0/16"
@@ -106,13 +112,17 @@ resource "aws_security_group" "ecs" {
 
 # Application Load Balancer
 resource "aws_lb" "app" {
-  name               = "${var.app_name}-lb"
+  name               = "${var.app_name}-lb-${random_id.suffix.hex}"
   internal           = false
   load_balancer_type = "application"
   subnets            = aws_subnet.public[*].id
   security_groups    = [aws_security_group.lb.id]
-
   enable_deletion_protection = false
+
+  timeouts {
+    create = "10m"
+    delete = "10m"
+  }
 
   tags = {
     Name = "${var.app_name}-lb"
@@ -121,7 +131,7 @@ resource "aws_lb" "app" {
 
 # Target Group
 resource "aws_lb_target_group" "app" {
-  name        = "${var.app_name}-tg"
+  name        = "${var.app_name}-tg-${random_id.suffix.hex}"
   port        = var.app_port
   protocol    = "HTTP"
   target_type = "ip"
@@ -172,15 +182,11 @@ resource "aws_iam_role" "ecs_task_execution_role" {
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "ecs-tasks.amazonaws.com"
-        }
-      }
-    ]
+    Statement = [{
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
+      Principal = { Service = "ecs-tasks.amazonaws.com" }
+    }]
   })
 
   tags = {
@@ -208,24 +214,20 @@ resource "aws_ecs_task_definition" "app" {
     cpu       = 256
     memory    = 512
     essential = true
-    portMappings = [
-      {
-        containerPort = var.app_port
-        hostPort      = var.app_port
-      }
-    ]
-
-    # Configurações adicionais para React
-    environment = [
-      { name = "NODE_ENV", value = "production" }
-    ]
-
+    portMappings = [{
+      containerPort = var.app_port
+      hostPort      = var.app_port
+    }]
+    environment = [{
+      name  = "NODE_ENV"
+      value = "production"
+    }]
     logConfiguration = {
       logDriver = "awslogs"
       options = {
-        "awslogs-group"         = "/ecs/${var.app_name}"
-        "awslogs-region"        = var.region
-        "awslogs-stream-prefix" = "ecs"
+        awslogs-group         = "/ecs/${var.app_name}"
+        awslogs-region        = var.region
+        awslogs-stream-prefix = "ecs"
       }
     }
   }])
@@ -244,8 +246,8 @@ resource "aws_ecs_service" "app" {
   launch_type     = "FARGATE"
 
   network_configuration {
-    subnets         = aws_subnet.public[*].id
-    security_groups = [aws_security_group.ecs.id]
+    subnets          = aws_subnet.public[*].id
+    security_groups  = [aws_security_group.ecs.id]
     assign_public_ip = true
   }
 
@@ -255,7 +257,6 @@ resource "aws_ecs_service" "app" {
     container_port   = var.app_port
   }
 
-  # Garante que o ALB esteja criado antes do serviço
   depends_on = [aws_lb_listener.front_end]
 
   tags = {
@@ -277,14 +278,4 @@ resource "aws_cloudwatch_log_group" "ecs_logs" {
 output "alb_dns_name" {
   value       = aws_lb.app.dns_name
   description = "DNS do Application Load Balancer"
-}
-
-output "ecs_service_name" {
-  value       = aws_ecs_service.app.name
-  description = "Nome do serviço ECS"
-}
-
-output "task_definition_arn" {
-  value       = aws_ecs_task_definition.app.arn
-  description = "ARN da task definition"
 }
