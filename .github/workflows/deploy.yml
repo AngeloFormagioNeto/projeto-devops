@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: CI/CD Pipeline with Netlify Deploy
 
 on:
   push:
@@ -9,19 +9,22 @@ on:
 env:
   IMAGE_NAME: meu-app-react
   DOCKER_REGISTRY: docker.io
-  VERCEL_PROJECT_NAME: meu-app-react
+  TF_VERSION: 1.8.4
 
 jobs:
-  build-and-test:
+  build-test-package:
     runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.set-tag.outputs.tag }}
+
     steps:
-    - name: Checkout repository
+    - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Set up Node.js
+    - name: Setup Node.js
       uses: actions/setup-node@v3
       with:
-        node-version: '18'
+        node-version: 18
         cache: 'npm'
 
     - name: Install dependencies
@@ -30,7 +33,7 @@ jobs:
         npm install --save-dev @babel/plugin-proposal-private-property-in-object
         npx update-browserslist-db@latest
 
-    - name: Test component rendering
+    - name: Run tests
       run: |
         npx react-scripts test \
         --testMatch="**/src/components/**/*.test.js" \
@@ -38,19 +41,32 @@ jobs:
         --detectOpenHandles \
         --passWithNoTests
 
-    - name: Run build
+    - name: Build production bundle
       run: npm run build
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-files
+        path: build/
+        retention-days: 1
+
+    - name: Set image tag
+      id: set-tag
+      run: |
+        echo "tag=$GITHUB_SHA" >> $GITHUB_OUTPUT
 
     - name: Build Docker image
       run: |
         docker build \
-          -t ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA \
+          -t ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ steps.set-tag.outputs.tag }} \
           -t ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest \
           .
-        
-        docker save -o image.tar \
-          ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA \
-          ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+
+    - name: Save Docker image
+      run: docker save -o image.tar \
+        ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ steps.set-tag.outputs.tag }} \
+        ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
 
     - name: Upload Docker image
       uses: actions/upload-artifact@v4
@@ -59,8 +75,8 @@ jobs:
         path: image.tar
         retention-days: 1
 
-  push-to-registry:
-    needs: build-and-test
+  push-to-dockerhub:
+    needs: build-test-package
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     
@@ -74,7 +90,7 @@ jobs:
     - name: Load Docker image
       run: docker load -i downloaded_image/image.tar
 
-    - name: Log in to Docker Hub
+    - name: Login to Docker Hub
       uses: docker/login-action@v3
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -82,53 +98,49 @@ jobs:
 
     - name: Push Docker images
       run: |
-        docker push ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA
+        docker push ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ needs.build-test-package.outputs.image-tag }}
         docker push ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
 
     - name: Print image info
       run: |
-        echo "Image pushed to:"
-        echo "${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest"
-        echo "${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$GITHUB_SHA"
+        echo "Images pushed to Docker Hub"
+        echo "Latest: ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest"
+        echo "Versioned: ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ needs.build-test-package.outputs.image-tag }}"
 
-  deploy-to-vercel:
-    needs: push-to-registry
+  deploy-to-netlify:
+    needs: build-test-package
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: build-files
+        path: build
 
-    - name: Setup Vercel CLI
-      run: npm install -g vercel@32.2.0
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
 
-    - name: Create vercel.json configuration
+    - name: Terraform Init
+      run: terraform init
+      working-directory: ./terraform
+
+    - name: Terraform Apply
+      env:
+        NETLIFY_TOKEN: ${{ secrets.NETLIFY_TOKEN }}
+      run: terraform apply -auto-approve -var="netlify_token=$NETLIFY_TOKEN"
+      working-directory: ./terraform
+
+    - name: Get site URL
+      id: site-url
       run: |
-        cat > vercel.json <<EOF
-        {
-          "version": 2,
-          "public": false,
-          "builds": [
-            {
-              "src": "package.json",
-              "use": "@vercel/static-build",
-              "config": {
-                "distDir": "build"
-              }
-            }
-          ],
-          "routes": [
-            {
-              "src": "/(.*)",
-              "dest": "/$1"
-            }
-          ]
-        }
-        EOF
+        echo "url=$(terraform output -raw site_url)" >> $GITHUB_OUTPUT
+      working-directory: ./terraform
 
-    - name: Deploy to Vercel
+    - name: Print deployment info
       run: |
-        vercel deploy --prod --token=${{ secrets.VERCEL_API_TOKEN }} \
-          --scope=${{ secrets.VERCEL_SCOPE }} \
-          --yes
+        echo "✅ Deployment successful!"
+        echo "🌐 Site URL: ${{ steps.site-url.outputs.url }}"

@@ -35,5 +35,4 @@ jobs:
         --passWithNoTests
 
     - name: Run build
-      run: npm run build
-
+      run: npm run buil
