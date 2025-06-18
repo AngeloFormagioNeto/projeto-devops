@@ -278,9 +278,3 @@ resource "aws_cloudwatch_log_group" "ecs_logs" {
     Name = "logs-${random_string.suffix.result}"
   }
 }
-
-# Outputs
-output "alb_dns_name" {
-  value       = aws_lb.app.dns_name
-  description = "DNS do Application Load Balancer"
-}
